@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+import random
 
 from playwright.sync_api import Page, TimeoutError as PWTimeout
 
@@ -100,7 +101,7 @@ def post_reply(page: Page, post_id: str, reply: str) -> None:
     composer = page.locator(SEL["dialog_composer"]).first
     composer.wait_for(state="visible", timeout=10000)
     composer.click()
-    page.keyboard.type(reply, delay=2)  # was 15-45 ms per character, i.e. ~6s for a 200-char reply
+    page.keyboard.type(reply, delay=random.randint(15, 45))  # was 15-45 ms per character, i.e. ~6s for a 200-char reply
 
     page.locator(SEL["dialog_post"]).first.click(timeout=10000)  # waits until the button is enabled
     page.locator(SEL["dialog_composer"]).first.wait_for(state="detached", timeout=15000)
