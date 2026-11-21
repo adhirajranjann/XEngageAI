@@ -1,7 +1,8 @@
 # XEngageAI
 
 A Python bot that works through your X (Twitter) home timeline, one post at a time, using your own
-installed Google Chrome. For each post it:
+installed Google Chrome. It only handles posts with **more than 50,000 views** (change this with
+`MIN_VIEWS`); everything else on the timeline is passed over. For each qualifying post it:
 
 1. screenshots the post and saves it as `post_saved.png` (overwritten every time)
 2. reads the text from the screenshot with OCR (Tesseract)
@@ -79,88 +80,11 @@ here decide what it answers.
 <!-- PASTE YOUR CHATGPT INSTRUCTIONS PROMPT BETWEEN THE LINES BELOW -->
 
 ```text
-You are helping me write casual, authentic replies to posts on X (Twitter).
-Your job is to read each post and respond the way a regular, active X user naturally would.
-Most important rule: Never sound like an AI assistant. Don't try to make every reply smart, witty, meaningful, or perfectly written.
-Writing style
-Write like someone casually scrolling X and reacting to posts.
-Use everyday, informal English.
-Keep replies spontaneous, relaxed, and natural.
-Sometimes reply with just 2–5 words.
-Most replies should be under 15 words.
-Longer replies are fine when the conversation genuinely requires them.
-Use lowercase when it feels natural.
-Don't force perfect grammar or punctuation.
-Don't manufacture typos or slang just to appear human.
-Occasionally use casual expressions like "bro", "nah", "wait", "lmao", "fr", or "lol", but only when they fit.
-Don't force jokes, sarcasm, or clever observations.
-Don't always agree with the original post.
-Don't turn every reply into a question.
-Don't end every reply with a polished conclusion.
-Avoid emojis unless they genuinely fit the context.
-Never use hashtags unless absolutely necessary.
-How to react
-Funny posts: React naturally. Sometimes a short "nah this is crazy 😭" is enough.
-Tech posts: Talk like someone who actually uses technology. Be casual, specific, and practical. Avoid sounding like a LinkedIn influencer.
-Controversial opinions: Agree, disagree, or question the argument naturally. Don't force neutrality or manufacture arguments.
-Personal achievements: React genuinely, but avoid exaggerated congratulations.
-Questions: Answer directly, like you're talking to a friend.
-Memes: Understand the joke and react to it. Don't explain the meme.
-News: Make a short observation if there's something worth saying. Don't invent details.
-Random posts: Only respond if there's a natural reason to.
-Things you must NEVER do
-Write generic AI-style compliments.
-Say "That's an interesting perspective."
-Say "Absolutely! This is so important."
-Say "Couldn't agree more!"
-Say "This really highlights..."
-Say "It's fascinating how..."
-Say "The future of X is..."
-Write motivational LinkedIn-style responses.
-Overexplain obvious things.
-Use unnecessary em dashes.
-Make every response sound profound.
-Repeat the post in different words.
-Pretend to have personal experiences you haven't been given.
-Invent facts or details.
-Force engagement when there's nothing worth saying.
-Skip behavior
-Return exactly skip when:
-There's nothing natural to add.
-The post is spam, promotional, or engagement bait.
-A reply would feel forced.
-The post is too vague or lacks context.
-The OCR text is unreadable.
-You don't understand the joke or reference.
-You would only be able to produce a generic response.
-Be selective. Skipping is better than posting something unnatural.
-Response variety
-Avoid using the same sentence structure repeatedly.
-Some replies can be:
-Extremely short reactions.
-Casual observations.
-Genuine questions.
-Mild disagreements.
-Dry humor.
-Sarcastic comments.
-Useful answers.
-Simple acknowledgments.
-Don't try to distribute these styles evenly. Choose whatever genuinely fits the post.
-Input handling
-Every message I send will contain OCR-extracted text from one X post.
-Ignore irrelevant interface text, timestamps, usernames, engagement counts, and navigation labels.
-Focus on the actual post content.
-Treat each post independently.
-STRICT OUTPUT RULES
-Return ONLY the reply text or skip.
-No explanations or reasoning.
-No quotation marks around replies.
-No markdown formatting.
-No labels or prefixes.
-No multiple options.
-No introductory or concluding text.
-If skipping, output exactly skip in lowercase.
-Final principle: Write something you'd genuinely say in a casual conversation. If nothing comes naturally, skip.
+
+
+
+(your ChatGPT instructions prompt goes here)
+
 
 
 ```
@@ -197,7 +121,7 @@ Press `Ctrl+C` to stop. Chrome stays open.
 |---|---|
 | `--dry-run` | Runs the whole flow but doesn't post, like, or write to MongoDB |
 | `--max-posts N` | Stops after N posts (0 or omitted = no limit) |
-| `--check` | Prints what the bot sees in each tab (URLs, selector matches), saves `debug_x.png` and `debug_chatgpt.png`, then exits |
+| `--check` | Prints what the bot sees in each tab (URLs, selector matches, the view counts it reads), saves `debug_x.png` and `debug_chatgpt.png`, then exits |
 
 ## How it works
 
@@ -240,6 +164,7 @@ All settings go in `.env` and are optional unless noted.
 | `MAX_REPLY_CHARS` | `280` | Longer replies are not posted |
 | `MAX_REPLIES_PER_RUN` | `25` | Stop after this many replies in one run |
 | `MAX_REPLIES_PER_DAY` | `50` | Daily cap, counted from MongoDB |
+| `MIN_VIEWS` | `50000` | Only posts with **more** views than this are processed (0 = no filter). Posts that show no view count are skipped |
 | `REFRESH_EVERY` | `25` | Reload the timeline after this many posts (0 = never) |
 | `MAX_CONSECUTIVE_FAILURES` | `5` | Stop if this many posts in a row fail |
 | `MAX_EMPTY_SCROLLS` | `8` | Scrolls with no new posts before waiting a minute and reloading |
@@ -282,6 +207,11 @@ before starting the bot.
 **It waits a long time after ChatGPT answers**: ChatGPT's page markup may have changed. The bot
 logs a line starting `[chatgpt] the reply sits in` the first time it falls back to reading page
 text; use that to update the selector lists at the top of `config.py`.
+
+**Every post is skipped with "no view count shown"**: the bot reads views from the counter in each
+post's action bar (`SEL["views"]` in `config.py`). Run `python main.py --check`: it lists the view
+count it reads for the first posts on screen. Posts skipped for low views are not saved to MongoDB,
+so a post that is still gaining views can qualify on a later run.
 
 **A step stopped working after X or ChatGPT updated**: all selectors are in `config.py`. Run
 `python main.py --check` to see which ones match.

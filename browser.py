@@ -8,6 +8,7 @@ from playwright.sync_api import Page
 
 from config import GPT_ASSISTANT_CANDIDATES, GPT_INPUT_CANDIDATES, GPT_STOP_CANDIDATES, SEL
 from utils import log
+from x_actions import describe_views
 
 
 def pick_tabs(context) -> tuple[Page | None, Page | None]:
@@ -39,7 +40,7 @@ def describe_tab(page: Page, label: str) -> None:
         log.info("[%s] could not read page text: %s", label, e)
     names = (GPT_INPUT_CANDIDATES + [SEL["gpt_send"]] + GPT_ASSISTANT_CANDIDATES + GPT_STOP_CANDIDATES
              if label == "chatgpt"
-             else [SEL["post"], SEL["permalink"], SEL["like"], SEL["reply"]])
+             else [SEL["post"], SEL["permalink"], SEL["views"], SEL["like"], SEL["reply"]])
     for sel in names:
         try:
             log.info("[%s] %-48s matches=%d visible=%d", label, sel,
@@ -68,3 +69,5 @@ def check_setup(context) -> None:
             log.warning("[%s] no matching tab found", label)
         else:
             describe_tab(pg, label)
+            if label == "x":
+                describe_views(pg)
