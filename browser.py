@@ -8,7 +8,7 @@ from playwright.sync_api import Page
 
 from config import GPT_ASSISTANT_CANDIDATES, GPT_INPUT_CANDIDATES, GPT_STOP_CANDIDATES, SEL
 from utils import log
-from x_actions import describe_views
+from x_actions import describe_filters
 
 
 def pick_tabs(context) -> tuple[Page | None, Page | None]:
@@ -70,4 +70,4 @@ def check_setup(context) -> None:
         else:
             describe_tab(pg, label)
             if label == "x":
-                describe_views(pg)
+                describe_filters(pg)

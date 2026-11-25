@@ -55,12 +55,14 @@ MAX_CONSECUTIVE_FAILURES = _int("MAX_CONSECUTIVE_FAILURES", 5)
 MAX_EMPTY_SCROLLS = _int("MAX_EMPTY_SCROLLS", 8)
 REFRESH_EVERY = _int("REFRESH_EVERY", 25)  # reload the timeline after this many posts (0 = never)
 MIN_VIEWS = _int("MIN_VIEWS", 50000)  # only posts with MORE views than this are processed (0 = no filter)
+MAX_POST_AGE_MINUTES = _int("MAX_POST_AGE_MINUTES", 60)  # only posts newer than this are processed (0 = no filter)
 
 # X and ChatGPT change their markup now and then; if something stops working, fix it here.
 SEL = {
     "post": 'article[data-testid="tweet"]',
     "permalink": 'a[href*="/status/"]:has(time)',
     "views": 'a[href*="/analytics"]',  # the view counter in a post's action bar
+    "post_time": "time[datetime]",  # the timestamp inside a post's permalink link (ISO time in `datetime`)
     "like": '[data-testid="like"]',
     "unlike": '[data-testid="unlike"]',
     "reply": '[data-testid="reply"]',

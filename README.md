@@ -1,8 +1,9 @@
 # XEngageAI
 
 A Python bot that works through your X (Twitter) home timeline, one post at a time, using your own
-installed Google Chrome. It only handles posts with **more than 50,000 views** (change this with
-`MIN_VIEWS`); everything else on the timeline is passed over. For each qualifying post it:
+installed Google Chrome. It only handles posts that have **more than 50,000 views** (`MIN_VIEWS`)
+**and were posted less than 1 hour ago** (`MAX_POST_AGE_MINUTES`); everything else on the timeline is
+passed over. For each qualifying post it:
 
 1. screenshots the post and saves it as `post_saved.png` (overwritten every time)
 2. reads the text from the screenshot with OCR (Tesseract)
@@ -121,7 +122,7 @@ Press `Ctrl+C` to stop. Chrome stays open.
 |---|---|
 | `--dry-run` | Runs the whole flow but doesn't post, like, or write to MongoDB |
 | `--max-posts N` | Stops after N posts (0 or omitted = no limit) |
-| `--check` | Prints what the bot sees in each tab (URLs, selector matches, the view counts it reads), saves `debug_x.png` and `debug_chatgpt.png`, then exits |
+| `--check` | Prints what the bot sees in each tab (URLs, selector matches, and the view count and age it reads for the first posts), saves `debug_x.png` and `debug_chatgpt.png`, then exits |
 
 ## How it works
 
@@ -165,11 +166,12 @@ All settings go in `.env` and are optional unless noted.
 | `MAX_REPLIES_PER_RUN` | `25` | Stop after this many replies in one run |
 | `MAX_REPLIES_PER_DAY` | `50` | Daily cap, counted from MongoDB |
 | `MIN_VIEWS` | `50000` | Only posts with **more** views than this are processed (0 = no filter). Posts that show no view count are skipped |
+| `MAX_POST_AGE_MINUTES` | `60` | Only posts published less than this many minutes ago are processed (0 = no filter). Posts with no timestamp are skipped |
 | `REFRESH_EVERY` | `25` | Reload the timeline after this many posts (0 = never) |
 | `MAX_CONSECUTIVE_FAILURES` | `5` | Stop if this many posts in a row fail |
 | `MAX_EMPTY_SCROLLS` | `8` | Scrolls with no new posts before waiting a minute and reloading |
 | `GPT_TIMEOUT` | `180` | Seconds to wait for ChatGPT's answer before giving up on a post |
-| `GPT_FALLBACK_AFTER` | `12` | Seconds before the bot reads the reply from the page text if its selectors don't match |
+| `GPT_FALLBACK_AFTER` | `12` | Seconds before the bot reads ChatGPT's reply by page structure when its reply selectors match nothing (it starts after about 1.5 s if they matched nothing before sending) |
 | `OCR_PSM` | `3` | Tesseract page-segmentation mode |
 | `MIN_OCR_CHARS` | `5` | Posts with less OCR text than this are skipped as `no_text` |
 
@@ -204,14 +206,25 @@ before starting the bot.
 "verify you are human" page, or not on a chat. Run `python main.py --check` and look at
 `debug_chatgpt.png`.
 
-**It waits a long time after ChatGPT answers**: ChatGPT's page markup may have changed. The bot
-logs a line starting `[chatgpt] the reply sits in` the first time it falls back to reading page
-text; use that to update the selector lists at the top of `config.py`.
+**It takes about 3 seconds after ChatGPT answers**: ChatGPT's reply selectors in `config.py` don't match
+your page (for example, logged in vs logged out use different markup), so the bot reads the reply by
+page structure and waits about a second for the text to settle. It works, just not instantly. The first
+time it does this it logs `[chatgpt] the reply sits in ...`; that line shows which element holds the
+reply, so a matching selector can be added to `GPT_ASSISTANT_CANDIDATES` for the instant path.
+
+**"ChatGPT's reply was not detected"**: the bot saves `debug_chatgpt.png` and `debug_chatgpt_dom.txt`
+(the markup around the message it sent) and logs the same. Those show what the page looks like to the bot.
 
 **Every post is skipped with "no view count shown"**: the bot reads views from the counter in each
 post's action bar (`SEL["views"]` in `config.py`). Run `python main.py --check`: it lists the view
-count it reads for the first posts on screen. Posts skipped for low views are not saved to MongoDB,
-so a post that is still gaining views can qualify on a later run.
+count and age it reads for the first posts on screen. Posts skipped for low views are not saved to
+MongoDB. A post that is still inside the age window is looked at again every 5 minutes, so one that is
+gaining views can qualify later; once it is older than `MAX_POST_AGE_MINUTES` it is dropped.
+
+**Every post is skipped as "no timestamp found" or "too old"**: the bot reads each post's age from the
+timestamp link in the post header (`SEL["post_time"]` in `config.py`). `python main.py --check` lists
+the age it reads for the first posts on screen. Note that 50,000 views within an hour is a high bar;
+lower `MIN_VIEWS` (or raise `MAX_POST_AGE_MINUTES`) if almost nothing qualifies.
 
 **A step stopped working after X or ChatGPT updated**: all selectors are in `config.py`. Run
 `python main.py --check` to see which ones match.

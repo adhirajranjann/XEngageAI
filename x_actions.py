@@ -5,15 +5,18 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from playwright.sync_api import Page, TimeoutError as PWTimeout
 
-from config import MIN_VIEWS, SEL, SELF_HANDLE
+from config import MAX_POST_AGE_MINUTES, MIN_VIEWS, SEL, SELF_HANDLE
 from database import Store
 from utils import log, now_utc
 
 
 _PERMALINK_RE = re.compile(r"^/([^/]+)/status/(\d+)")
+_RECHECK_SECONDS = 300  # how long before a recent post that was short of views is looked at again
+_retry_at: dict[str, float] = {}  # post id -> time.time() after which it is re-evaluated
 _COUNT_RE = re.compile(r"(\d[\d.,]*)\s*([KMB])?", re.I)
 _MULTIPLIER = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
 
@@ -52,9 +55,44 @@ def get_views(art) -> int | None:
         return None
 
 
-def describe_views(page: Page, limit: int = 10) -> None:
-    """--check helper: log the view count the bot reads for the first posts on screen."""
-    log.info("[x] views filter: only posts with more than %s views are processed (MIN_VIEWS)", f"{MIN_VIEWS:,}")
+def age_from_iso(stamp: str | None, now: datetime | None = None) -> timedelta | None:
+    """Age of a post from X's ISO timestamp ('2026-11-24T11:45:12.000Z'), or None if unreadable."""
+    if not stamp:
+        return None
+    try:
+        posted = datetime.fromisoformat(stamp.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if posted.tzinfo is None:
+        posted = posted.replace(tzinfo=timezone.utc)
+    return (now or now_utc()) - posted
+
+
+def get_post_age(art) -> timedelta | None:
+    """How long ago a post was published, from the timestamp X shows on it; None if there is none."""
+    try:
+        link = art.locator(SEL["permalink"]).first  # the post's own timestamp link (not a quoted post's)
+        stamp = link.locator(SEL["post_time"]).first.get_attribute("datetime", timeout=1000)
+    except PWTimeout:
+        return None
+    return age_from_iso(stamp)
+
+
+def format_age(age: timedelta | None) -> str:
+    if age is None:
+        return "not found"
+    minutes = int(age.total_seconds() // 60)
+    if minutes < 60:
+        return f"{minutes}m"
+    if minutes < 24 * 60:
+        return f"{minutes // 60}h{minutes % 60:02d}m"
+    return f"{minutes // (24 * 60)}d"
+
+
+def describe_filters(page: Page, limit: int = 10) -> None:
+    """--check helper: log the view count and age the bot reads for the first posts on screen."""
+    log.info("[x] filters: more than %s views (MIN_VIEWS), posted within %s min (MAX_POST_AGE_MINUTES)",
+             f"{MIN_VIEWS:,}", MAX_POST_AGE_MINUTES)
     arts = page.locator(SEL["post"])
     for i in range(min(arts.count(), limit)):
         art = arts.nth(i)
@@ -63,7 +101,8 @@ def describe_views(page: Page, limit: int = 10) -> None:
         except PWTimeout:
             parsed = None
         views = get_views(art)
-        log.info("[x]   post %s: views=%s", parsed[1] if parsed else "?", f"{views:,}" if views is not None else "not found")
+        log.info("[x]   post %s: views=%s age=%s", parsed[1] if parsed else "?",
+                 f"{views:,}" if views is not None else "not found", format_age(get_post_age(art)))
 
 
 def parse_permalink(href: str | None) -> tuple[str, str] | None:
@@ -113,6 +152,8 @@ def next_unprocessed(page: Page, store: Store, seen: set) -> Post | None:
         handle, pid = parsed
         if pid in seen:
             continue
+        if _retry_at.get(pid, 0) > time.time():
+            continue  # low on views a moment ago; looked at again every few minutes while it is fresh
         if store.seen(pid):
             seen.add(pid)
             continue
@@ -123,14 +164,29 @@ def next_unprocessed(page: Page, store: Store, seen: set) -> Post | None:
         if is_ad(art):
             _ignore(store, seen, post, "ignored_ad")
             continue
+        age = None
+        if MAX_POST_AGE_MINUTES:
+            age = get_post_age(art)
+            if age is None or age > timedelta(minutes=MAX_POST_AGE_MINUTES):
+                log.info("Skipping %s: %s (only posts under %d min old)", post.url,
+                         f"posted {format_age(age)} ago" if age is not None else "no timestamp found",
+                         MAX_POST_AGE_MINUTES)
+                _retry_at.pop(pid, None)
+                seen.add(pid)
+                continue
         if MIN_VIEWS:
             views = get_views(art)
             if views is None or views <= MIN_VIEWS:
                 # Not stored in MongoDB: a post still gaining views can qualify on a later run.
                 log.info("Skipping %s: %s (need more than %s views)", post.url,
                          f"{views:,} views" if views is not None else "no view count shown", f"{MIN_VIEWS:,}")
-                seen.add(post.post_id)
+                if age is not None:
+                    # Still within the age window, so its views may yet cross the threshold: look again soon.
+                    _retry_at[pid] = time.time() + _RECHECK_SECONDS
+                else:
+                    seen.add(pid)
                 continue
+        _retry_at.pop(pid, None)
         return post
     return None
 
